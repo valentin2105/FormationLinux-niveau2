@@ -15,9 +15,3 @@
 
 - **TP6-Containers/** Créer et construire une image Docker pour une application Python puis la pousser dans un registre d'images privé.
 
-
-
-** Merci. **
-
-
-

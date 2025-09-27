@@ -1,6 +1,6 @@
 #!/bin/bash
 
-apt-get update && apt-get install -y apache2
+apt-get update && apt-get install -y apache2 ufw
 # Changer le port apache vers 81
 sed -i 's/Listen 80/Listen 81/g' /etc/apache2/ports.conf 
 service apache2 restart
@@ -16,8 +16,8 @@ service nginx restart
 chmod 400 /var/www/html/index.html
 
 # Firewall close port 80
-iptables -A INPUT -p tcp --dport http -j REJECT
-
+ufw allow ssh
+ufw --force enable
 
 # On lance un process qui va staturer le cpu
 yes > /dev/null &
