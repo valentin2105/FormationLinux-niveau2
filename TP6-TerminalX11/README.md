@@ -88,7 +88,7 @@ less crazy-shell.sh          # 💡 on lit toujours un script avant de l'exécut
 bash crazy-shell.sh
 ```
 
-> 🐛 **Deux défauts connus du script**, à corriger en exercice :
+> 🐛 **Ce script a deux défauts.** À vous de les corriger :
 > 1. Il appelle `google-chrome`, qui n'est **pas installé** → `command not found`. Ouvrez plutôt
 >    <https://github.com/ohmyzsh/ohmyzsh/wiki/Themes> depuis votre navigateur habituel.
 > 2. Il lance `zsh` **avant** `chsh`. Comme `zsh` ouvre un shell interactif, le `chsh` n'est
@@ -115,7 +115,7 @@ Dans `~/.zshrc` :
 
 ```zsh
 ZSH_THEME="agnoster"        # ou robbyrussell, powerlevel10k…
-plugins=(git docker sudo systemd zsh-autosuggestions zsh-syntax-highlighting)
+plugins=(git sudo systemd debian zsh-autosuggestions zsh-syntax-highlighting)
 
 source /usr/share/doc/fzf/examples/key-bindings.zsh
 source /usr/share/doc/fzf/examples/completion.zsh

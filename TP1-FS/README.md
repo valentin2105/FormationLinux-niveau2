@@ -235,7 +235,8 @@ cat /proc/mdstat          # affiche [U_] : un seul disque actif
 mdadm --detail /dev/md0   # State : clean, degraded
 ```
 
-✅ **Le point clé du TP :** malgré le disque mort, le fichier témoin est toujours lisible.
+✅ **C'est ici que le RAID prouve sa valeur :** malgré le disque mort, votre fichier témoin est
+toujours lisible et la partition toujours montée.
 
 ```bash
 cat /mnt/lvbtrfs/temoin.txt     # -> "Fichier temoin TP1"

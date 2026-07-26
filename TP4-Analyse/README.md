@@ -37,8 +37,9 @@ sudo bash install.sh
 Le script installe et configure plusieurs services, puis introduit **cinq problèmes distincts**
 de natures différentes : configuration, permissions, réseau, gestion de service et ressources.
 
-> 🚫 **Ne lisez pas `install.sh`.** Tout l'intérêt du TP est de diagnostiquer à l'aveugle,
-> comme face à un vrai incident. Un corrigé replié est disponible en fin de page.
+> 🚫 **Ne lisez pas `install.sh`.** Vous y perdriez tout le bénéfice de l'exercice : face à un
+> vrai incident, personne ne vous donnera la liste des pannes. Un corrigé replié vous attend
+> en fin de page, si vous bloquez.
 
 ---
 

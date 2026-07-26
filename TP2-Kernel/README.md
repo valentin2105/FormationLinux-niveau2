@@ -3,8 +3,8 @@
 ## 🎯 Objectif
 
 1. Écrire, compiler et charger un **module noyau minimal** (`Hello World` côté kernel)
-2. Aller plus loin avec un **périphérique caractère** exposé dans `/dev`
-3. Empaqueter un pilote réseau Intel en **paquet Debian `.deb` compilé par DKMS**
+2. Aller plus loin avec un **périphérique caractère** exposé dans `/dev`, que l'on interroge
+   depuis l'espace utilisateur
 
 💡 **Un module noyau, c'est quoi ?** Du code qui s'exécute en *espace noyau* (ring 0), chargeable
 et déchargeable à chaud, sans redémarrer. C'est ainsi que sont livrés les pilotes matériels,
@@ -28,9 +28,10 @@ ls -d /lib/modules/$(uname -r)/build
 ```
 
 > ⚠️ **Secure Boot.** Si votre machine démarre en UEFI avec Secure Boot **activé**, le noyau
-> refusera de charger un module non signé : `insmod: ERROR: could not insert module: Key was
-> rejected by service`. Vérifiez avec `mokutil --sb-state`. Pour ce TP, désactivez Secure Boot
-> dans le firmware de la VM (ou signez les modules avec une clé MOK — hors périmètre).
+> refusera de charger un module non signé :
+> `insmod: ERROR: could not insert module: Key was rejected by service`.
+> Vérifiez l'état avec `mokutil --sb-state`. Pour ce TP, désactivez Secure Boot dans le
+> firmware de la VM.
 
 ---
 
@@ -97,14 +98,16 @@ dmesg                      # -> "Goodbye, World!"
 lsmod | grep lkm           # plus rien
 ```
 
-### 🧪 Expérimentez
+### 🧪 À expérimenter
 
 ```bash
 make clean && make
-# Modifiez le message dans lkm1.c, recompilez, rechargez.
-# Que se passe-t-il si vous faites deux "insmod lkm1.ko" d'affilée ?
-# Et si vous "rmmod" un module non chargé ?
 ```
+
+- Modifiez le message dans `lkm1.c`, recompilez, rechargez. Le nouveau texte apparaît-il ?
+- Que se passe-t-il si vous faites deux `insmod lkm1.ko` d'affilée ?
+- Et si vous faites `rmmod` sur un module qui n'est pas chargé ?
+- Renommez `lkm1.ko` en `autre.ko` et chargez-le : sous quel nom apparaît-il dans `lsmod` ?
 
 > 💡 `insmod` charge **un fichier précis**. `modprobe` charge **un module par son nom** depuis
 > `/lib/modules/...` et résout automatiquement les dépendances. En production, on utilise `modprobe`.
@@ -193,161 +196,94 @@ rmmod lkm2
 dmesg | tail -2
 ```
 
-> ⚠️ **Bug pédagogique à repérer :** `file_ops` ne définit pas `.owner = THIS_MODULE`. Le module
-> compense avec `try_module_get()` dans `device_open()`, ce qui est la façon fragile de faire.
-> Retirez le `mknod` **avant** le `rmmod` : décharger un module dont le périphérique est ouvert
-> est le meilleur moyen de provoquer un *kernel oops*. Sauriez-vous corriger le module ?
+⚠️ **Retirez toujours le `mknod` AVANT le `rmmod`.** Décharger un module dont le périphérique
+est encore ouvert est le meilleur moyen de provoquer un *kernel oops*.
+
+### 🏋️ Exercice — corriger un défaut du module
+
+`file_ops` ne définit pas `.owner = THIS_MODULE`. Le module compense avec `try_module_get()`
+dans `device_open()`, ce qui est la façon fragile de faire : le compteur de références n'est
+tenu à jour que si l'ouverture réussit.
+
+Reproduisez le problème, puis corrigez-le :
+
+```bash
+# 1. Chargez le module et ouvrez le périphérique en continu
+insmod lkm2.ko
+MAJOR=$(awk '/lkm_example/ {print $1}' /proc/devices)
+mknod /dev/lkm2 c "$MAJOR" 0
+cat /dev/lkm2 > /dev/null &
+
+# 2. Observez le compteur de références
+lsmod | grep lkm2
+
+# 3. Nettoyez proprement
+kill %1 ; rm /dev/lkm2 ; rmmod lkm2
+```
+
+Ajoutez `.owner = THIS_MODULE,` dans la structure `file_ops`, retirez les appels à
+`try_module_get()` / `module_put()`, recompilez et vérifiez que le comportement de `lsmod`
+est identique — c'est désormais le VFS qui tient le compteur pour vous.
 
 ---
 
-## 3️⃣ Cas concret — Paquet DKMS pour le pilote Intel i40e
+## 3️⃣ 🏋️ Pour aller plus loin
 
-### Le problème
+### Paramètres de module
 
-Vous déployez une carte réseau **Intel XXV710-DA2** dont le pilote `i40e` fourni par le noyau est
-trop ancien (bug, fonctionnalité manquante). Intel publie un pilote *out-of-tree* à compiler
-soi-même. Mais **à chaque mise à jour du noyau, il faut recompiler**.
+Un module peut recevoir des options au chargement. Ajoutez dans `lkm1.c` :
 
-### La solution : DKMS
+```c
+#include <linux/moduleparam.h>
 
-**D**ynamic **K**ernel **M**odule **S**upport stocke les sources dans `/usr/src/<paquet>-<version>/`
-et **recompile automatiquement** le module à chaque installation d'un nouveau noyau, via un hook APT.
-On l'empaquette en `.deb` pour le déployer proprement sur un parc.
+static char *nom = "monde";
+module_param(nom, charp, 0644);
+MODULE_PARM_DESC(nom, "Nom a saluer");
+```
 
-### Anatomie du paquet
-
-📁 [`ModuleDKMS/debian/`](ModuleDKMS/debian/)
-
-| Fichier | Rôle |
-|---|---|
-| `control` | Métadonnées du paquet : nom, mainteneur, **dépendances de construction** |
-| `changelog` | Historique **et source de la version** du paquet (lue par `dpkg-buildpackage`) |
-| `rules` | Le « Makefile » de la construction. `dh $@ --with dkms` active l'automatisation debhelper. |
-| `i40e-dkms.dkms` | Le fichier `dkms.conf` : quel module construire, où l'installer, faut-il régénérer l'initramfs |
+Puis utilisez `nom` dans le `printk`, recompilez et testez :
 
 ```bash
-cat debian/control debian/rules debian/i40e-dkms.dkms
+insmod lkm1.ko nom="Formation"
+dmesg | tail -1
+cat /sys/module/lkm1/parameters/nom     # le paramètre est lisible à chaud
+rmmod lkm1
 ```
 
-### 🚨 Adaptations obligatoires pour Debian 13
+### Installer le module dans le système
 
-Ce paquet a été écrit à l'époque de Debian 10 « Buster ». **Trois choses ont changé** :
-
-**a) L'extension debhelper DKMS a été sortie du paquet `dkms`**
-
-Depuis DKMS 3.x, le greffon `dh --with dkms` vit dans un paquet séparé : **`dh-dkms`**.
-Sans lui, la construction échoue immédiatement :
-
-```
-dh: error: unable to load addon dkms: Can't locate Debian/Debhelper/Sequence/dkms.pm in @INC
-```
-
-**b) Le niveau de compatibilité debhelper 9 est déprécié**
-
-`dh: warning: Compatibility levels before 10 are deprecated (level 9 in use)`
-
-**c) `debian/files` est un artefact de build** — il ne devrait pas être versionné, `dpkg` le régénère.
-
-Appliquez donc :
+Jusqu'ici on chargeait un fichier local. Pour que `modprobe` le trouve :
 
 ```bash
-cd TP2-Kernel/ModuleDKMS
+mkdir -p /lib/modules/$(uname -r)/extra
+cp lkm1.ko /lib/modules/$(uname -r)/extra/
+depmod -a
 
-# Corriger les dépendances de construction et le niveau de compat
-sed -i 's/^Build-Depends:.*/Build-Depends: debhelper-compat (= 13), dh-dkms/' debian/control
-rm -f debian/compat debian/files
+modprobe lkm1                # plus besoin du chemin
+lsmod | grep lkm1
+modprobe -r lkm1
+
+# Chargement automatique au démarrage
+echo lkm1 > /etc/modules-load.d/lkm1.conf
 ```
 
-### Construction
+### Explorer les modules du système
 
 ```bash
-# Dépendances de construction (noter dh-dkms)
-apt update && apt install -y build-essential fakeroot debhelper dkms dh-dkms
-
-# Décompression des sources du pilote
-tar -zxvf i40e-2.10.19.30.tar.gz
-
-# La définition du paquet doit se trouver DANS le dossier des sources
-cp -r debian/ i40e-2.10.19.30/
-cd i40e-2.10.19.30/
-
-# Construction (--no-sign : on ne signe pas avec une clé GPG)
-dpkg-buildpackage --no-sign
+lsmod | head -20                        # les modules chargés, triés par usage
+modinfo ext4 | head                     # métadonnées d'un vrai module
+systool -vm ext4                        # nécessite sysfsutils
+cat /proc/modules                       # la source brute de lsmod
+ls /sys/module/                         # chaque module expose ses paramètres ici
 ```
 
-✅ Le paquet est produit **dans le dossier parent** :
+### Voir ce que fait un module au chargement
 
 ```bash
-cd ..
-ls -lh *.deb                        # -> i40e-dkms_2.4.6-0_all.deb
-dpkg -c i40e-dkms_2.4.6-0_all.deb   # contenu : les sources dans /usr/src/i40e-2.4.6/
-dpkg -I i40e-dkms_2.4.6-0_all.deb   # métadonnées
-```
-
-> 💡 **Incohérence à relever :** le `changelog` annonce la version `2.4.6` alors que l'archive
-> contient le pilote `2.10.19.30`. C'est le `changelog` qui fait foi pour `dpkg` et pour
-> `dh_dkms -V`. Corrigez-le avec `dch -v 2.10.19.30-1` pour un paquet honnête.
-
-### Installation
-
-```bash
-dpkg -i i40e-dkms_2.4.6-0_all.deb
-
-# ✅ Vérifications
-dkms status                    # état de compilation par version de noyau
-ls /usr/src/i40e-*/            # les sources déposées par le paquet
-modinfo i40e                   # infos du pilote actuellement disponible
-```
-
-### ⚠️ Ce pilote ne compile PAS sur Debian 13 — et c'est l'exercice
-
-À l'installation, DKMS tente la compilation contre le noyau 6.12 et **échoue** :
-
-```
-/usr/src/i40e-2.4.6/kcompat.h:2778:10: fatal error: linux/pci-aspm.h: No such file or directory
-```
-
-**Diagnostic à faire faire aux stagiaires :**
-
-```bash
-# Le journal de compilation DKMS dit tout
-cat /var/lib/dkms/i40e/*/build/make.log
-```
-
-L'en-tête `linux/pci-aspm.h` a été **supprimé du noyau Linux en 5.5** (son contenu a été fusionné
-dans `linux/pci.h`). Or la couche de compatibilité de cette version du pilote, `kcompat.h`, ne
-gère les noyaux que **jusqu'à 5.4** :
-
-```bash
-grep -n 'KERNEL_VERSION(5,' i40e-2.10.19.30/src/kcompat.h | tail -5
-# -> le test le plus récent est KERNEL_VERSION(5,4,0)
-```
-
-**Conclusion :** un pilote *out-of-tree* n'est utilisable **que sur la plage de noyaux prévue
-par son éditeur**. C'est le principal coût caché de cette approche.
-
-**Les trois issues possibles :**
-
-| Option | Quand ? |
-|---|---|
-| Utiliser le pilote **in-tree** du noyau | Presque toujours le bon choix. Le noyau 6.12 embarque un `i40e` bien plus récent que 2.10 → `modinfo i40e` |
-| Prendre une version **récente** du pilote Intel | Si vous avez besoin d'une fonctionnalité absente du noyau. Dernière version : [intel/ethernet-linux-i40e](https://github.com/intel/ethernet-linux-i40e/releases) (v2.30.x) |
-| Rétroporter `kcompat.h` | À éviter : maintenance sans fin |
-
-```bash
-# Le pilote fourni par Debian 13, à comparer avec le nôtre
-modinfo i40e | head -8
-```
-
-🏋️ **Exercice :** téléchargez la dernière version du pilote sur le dépôt Intel, remplacez
-l'archive, adaptez le `changelog`, et refaites le paquet. Vérifiez que `dkms status`
-affiche bien `installed` pour le noyau 6.12.
-
-### Nettoyage
-
-```bash
-dpkg -r i40e-dkms
-dkms status
+dmesg -C
+modprobe -v loop                        # -v montre les dépendances résolues
+dmesg
+modprobe -r loop
 ```
 
 ---
@@ -358,19 +294,24 @@ dkms status
 |---|---|
 | `insmod fichier.ko` / `rmmod nom` | Charger / décharger un module par fichier |
 | `modprobe nom` / `modprobe -r nom` | Idem par nom, avec résolution des dépendances |
+| `depmod -a` | Recalculer la table des dépendances de modules |
 | `lsmod` | Modules chargés et leur compteur de références |
 | `modinfo nom` | Métadonnées, paramètres, `vermagic` |
 | `dmesg` / `journalctl -k` | Journal du noyau |
-| `dkms status` / `dkms build` / `dkms install` | Gestion des modules DKMS |
+| `mknod /dev/x c MAJ MIN` | Créer un fichier de périphérique caractère |
 | `/proc/devices` | Numéros majeurs enregistrés |
+| `/sys/module/` | Paramètres et état des modules chargés |
+
+---
 
 ## 🆘 Dépannage
 
 | Erreur | Cause | Solution |
 |---|---|---|
-| `make: *** /lib/modules/.../build: Aucun fichier` | En-têtes absents ou décalés du noyau courant | `apt install linux-headers-$(uname -r)` puis rebooter si le noyau a été mis à jour |
-| `Key was rejected by service` | Secure Boot actif | Le désactiver dans le firmware, ou signer le module |
-| `Invalid module format` | Module compilé pour un autre noyau | `modinfo ./x.ko` → comparer `vermagic` avec `uname -r`, recompiler |
+| `make: *** /lib/modules/.../build: Aucun fichier` | En-têtes absents ou décalés du noyau courant | `apt install linux-headers-$(uname -r)`, puis rebooter si le noyau vient d'être mis à jour |
+| `Key was rejected by service` | Secure Boot actif | Le désactiver dans le firmware de la VM |
+| `Invalid module format` | Module compilé pour un autre noyau | `modinfo ./x.ko` → comparer `vermagic` avec `uname -r`, puis recompiler |
+| `File exists` au `insmod` | Le module est déjà chargé | `rmmod` d'abord, ou `lsmod \| grep lkm` pour vérifier |
 | `Module lkm2 is in use` | Un `cat /dev/lkm2` tourne encore | Fermer le processus, `rm /dev/lkm2`, puis `rmmod` |
-| `unable to load addon dkms` | Paquet `dh-dkms` manquant | `apt install dh-dkms` |
-| DKMS : `Bad return status for module build` | Pilote incompatible avec le noyau | Lire `/var/lib/dkms/<pkg>/<ver>/build/make.log` |
+| `mknod: opération non permise` | Pas root | `sudo -i` |
+| `cat /dev/lkm2` ne renvoie rien | Mauvais numéro majeur | Le relire dans `/proc/devices`, recréer le nœud |

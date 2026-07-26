@@ -1,9 +1,0 @@
-Source: i40e-dkms
-Maintainer: Valentin OUVRARD <valentin@ouvrard.it>
-Build-Depends: debhelper (>= 9), dkms
-
-Package: i40e-dkms
-Architecture: all
-Depends: ${misc:Depends}
-Description: DKMS source for the Intel i40e network driver
-

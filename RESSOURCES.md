@@ -35,10 +35,10 @@ Documentation, tutoriels et aide-mémoire pour accompagner les TP.
 |---|---|
 | The Linux Kernel Module Programming Guide | <https://sysprog21.github.io/lkmpg/> |
 | Documentation du noyau — Kbuild modules | <https://docs.kernel.org/kbuild/modules.html> |
-| Wiki Debian — DKMS | <https://wiki.debian.org/KernelDKMS> |
-| Guide du nouveau mainteneur Debian (fr) | <https://www.debian.org/doc/manuals/maint-guide/index.fr.html> |
-| Pilote Intel i40e (dernières versions) | <https://github.com/intel/ethernet-linux-i40e/releases> |
+| Documentation du noyau — pilotes de périphériques caractère | <https://docs.kernel.org/driver-api/basics.html> |
+| Paramètres de module (`module_param`) | <https://docs.kernel.org/admin-guide/kernel-parameters.html> |
 | Signature de modules & Secure Boot | <https://wiki.debian.org/SecureBoot> |
+| Manuel `modprobe` / `depmod` | <https://manpages.debian.org/stable/kmod/modprobe.8.en.html> |
 
 ---
 
@@ -94,35 +94,6 @@ Documentation, tutoriels et aide-mémoire pour accompagner les TP.
 
 ---
 
-## 🐳 TP7 — Conteneurs
-
-### Docker
-
-| Ressource | Lien |
-|---|---|
-| Installer Docker sur Debian (méthode officielle à jour) | <https://docs.docker.com/engine/install/debian/> |
-| Bonnes pratiques Dockerfile | <https://docs.docker.com/build/building/best-practices/> |
-| Référence Dockerfile | <https://docs.docker.com/reference/dockerfile/> |
-| Spécification Compose | <https://docs.docker.com/reference/compose-file/> |
-| Registre privé (`registry:2`) | <https://distribution.github.io/distribution/> |
-| Portainer | <https://docs.portainer.io/> |
-| nginx-proxy | <https://github.com/nginx-proxy/nginx-proxy> |
-| Play with Docker (bac à sable en ligne) | <https://labs.play-with-docker.com/> |
-
-### Kubernetes
-
-| Ressource | Lien |
-|---|---|
-| Concepts Kubernetes (fr) | <https://kubernetes.io/fr/docs/concepts/> |
-| Antisèche kubectl | <https://kubernetes.io/docs/reference/kubectl/quick-reference/> |
-| ⚠️ APIs dépréciées / supprimées | <https://kubernetes.io/docs/reference/using-api/deprecation-guide/> |
-| k3s | <https://docs.k3s.io/> |
-| k3d (nouveau dépôt : `k3d-io`) | <https://k3d.io/> |
-| Kubernetes The Hard Way | <https://github.com/kelseyhightower/kubernetes-the-hard-way> |
-| Killercoda — labos Kubernetes gratuits | <https://killercoda.com/> |
-
----
-
 ## 🛠️ Divers
 
 | Ressource | Lien |
@@ -140,8 +111,6 @@ Conservés parce qu'ils apparaissent encore dans beaucoup de tutoriels :
 
 | Lien mort | Remplacement |
 |---|---|
-| `katacoda.com/courses/docker` — fermé en 2022 | [Play with Docker](https://labs.play-with-docker.com/) / [Killercoda](https://killercoda.com/) |
-| `github.com/rancher/k3d` — projet déplacé | [k3d-io/k3d](https://github.com/k3d-io/k3d) |
-| `github.com/jwilder/nginx-proxy` — projet déplacé | [nginx-proxy/nginx-proxy](https://github.com/nginx-proxy/nginx-proxy) |
-| `apt.kubernetes.io` — retiré en mars 2024 | `pkgs.k8s.io` (voir TP7 §6) |
 | `carlchenet.com/htop-explique-luptime/` — page supprimée | [htop expliqué](https://peteris.rocks/blog/htop/) |
+| `btrfs-tools` — paquet renommé depuis Debian 9 | `btrfs-progs` |
+| `apt-key` — retiré d'APT | Une clé par dépôt dans `/etc/apt/keyrings/` + option `signed-by` |

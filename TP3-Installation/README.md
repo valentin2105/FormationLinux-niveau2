@@ -6,11 +6,10 @@ Construire **un système Ubuntu complet à l'intérieur d'un dossier** de notre 
 « enfermer » avec `chroot`, y installer et y lancer un serveur web, puis vérifier depuis l'hôte
 que c'est bien le système invité qui répond.
 
-💡 **Pourquoi c'est important ?** C'est la brique de base derrière :
-la construction d'images (`docker build` part exactement de ce principe),
-les environnements de compilation reproductibles (`sbuild`, `pbuilder`),
-le dépannage d'un système cassé depuis un live-CD, et les *rootfs* embarqués.
-Comprendre `chroot`, c'est comprendre ce qu'un conteneur ajoute *par-dessus*.
+💡 **Pourquoi c'est important ?** C'est la brique de base derrière les environnements de
+compilation reproductibles (`sbuild`, `pbuilder`), le dépannage d'un système cassé depuis un
+live-CD ou une image de secours, la construction de *rootfs* embarqués, et l'installation
+d'un système sur un disque depuis un autre système.
 
 ---
 
@@ -48,17 +47,17 @@ Hôte Debian                          Vue depuis le chroot
 
 **Ce que `chroot` isole :** l'arborescence de fichiers. **C'est tout.**
 
-| | Isolé par `chroot` ? | Isolé par un conteneur ? |
-|---|---|---|
-| Système de fichiers | ✅ | ✅ |
-| Processus (PID) | ❌ | ✅ (namespace PID) |
-| Réseau / ports | ❌ | ✅ (namespace net) |
-| Utilisateurs | ❌ | ✅ (namespace user) |
-| Ressources CPU/RAM | ❌ | ✅ (cgroups) |
-| Noyau | ❌ partagé | ❌ partagé |
+| Ce qui est partagé avec l'hôte | Conséquence concrète |
+|---|---|
+| Les processus (PID) | `ps aux` depuis l'hôte voit les processus du chroot |
+| Le réseau et les ports | Un serveur lancé dans le chroot occupe le port 80 de l'hôte |
+| Les utilisateurs (UID) | L'UID 0 du chroot est le root de l'hôte |
+| Les ressources CPU / RAM | Aucune limite : le chroot peut saturer la machine |
+| Le noyau | Un seul noyau, celui de l'hôte |
 
 ⚠️ **`chroot` n'est PAS une frontière de sécurité.** Un root dans un chroot peut en sortir.
-C'est un outil de *construction*, pas de *confinement*.
+C'est un outil de *construction*, pas de *confinement*. Pour un véritable cloisonnement, il
+faut les *namespaces* et les *cgroups* du noyau — voir `systemd-nspawn` en fin de TP.
 
 ---
 
@@ -233,12 +232,17 @@ rm -rf /root/ubuntu
    apt install -y systemd-container
    systemd-nspawn -D /root/ubuntu --boot
    ```
-   Comparez `ps aux` à l'intérieur avec ce que donnait `chroot`.
-4. **Le lien avec Docker** — exportez votre rootfs en image :
+   Comparez `ps aux` à l'intérieur avec ce que donnait `chroot` : ici, l'invité a son propre
+   PID 1 et ne voit plus les processus de l'hôte.
+4. **Archiver le rootfs** — un système construit une fois peut être redéployé à volonté :
    ```bash
-   tar -C /root/ubuntu -c . | docker import - mon-ubuntu:tp3
-   docker run --rm -it mon-ubuntu:tp3 cat /etc/os-release
+   tar -C /root/ubuntu -czf /root/ubuntu-noble.tar.gz .
+   ls -lh /root/ubuntu-noble.tar.gz
    ```
+   Redéployez-le dans un autre dossier et vérifiez qu'il est toujours utilisable.
+5. **Réparer un système cassé** — c'est l'usage n°1 de `chroot` en production : démarrer sur une
+   image de secours, monter la partition racine du système en panne, s'y chrooter et corriger
+   (`update-grub`, `passwd`, `apt install -f`, édition de `/etc/fstab`…).
 
 ---
 
