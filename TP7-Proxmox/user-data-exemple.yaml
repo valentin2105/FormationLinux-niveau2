@@ -1,0 +1,142 @@
+#cloud-config
+# =============================================================================
+# TP7 — Exemple de user-data cloud-init complet
+# =============================================================================
+#
+# Installation :
+#   pvesm set local --content iso,vztmpl,backup,snippets
+#   mkdir -p /var/lib/vz/snippets
+#   cp user-data-exemple.yaml /var/lib/vz/snippets/user-web01.yaml
+#   qm set 201 --cicustom "user=local:snippets/user-web01.yaml"
+#   qm cloudinit dump 201 user      # vérifier ce qui sera injecté
+#   qm start 201
+#
+# ⚠️  AVERTISSEMENT — « user= » REMPLACE ENTIÈREMENT le user-data de Proxmox.
+#     --ciuser, --cipassword et --sshkeys sont IGNORÉS : tout ce dont la VM a
+#     besoin pour être accessible doit figurer ci-dessous. Une erreur ici = une
+#     VM sans aucun accès, à détruire et recloner.
+#
+#     Pour AJOUTER de la configuration en gardant les champs de l'interface
+#     Proxmox, utilisez « vendor= » au lieu de « user= ».
+#
+# ⚠️  Le premier caractère du fichier doit être exactement « #cloud-config ».
+#     Sans cette ligne, cloud-init ignore le fichier en silence.
+#
+# ⚠️  REMPLACEZ la clé SSH ci-dessous par la vôtre :
+#         cat /root/.ssh/id_ed25519.pub
+# =============================================================================
+
+# --- Identité ---------------------------------------------------------------
+# Note : le hostname n'est utile ici que si vous n'utilisez pas le nom de VM.
+hostname: web01
+fqdn: web01.lan
+manage_etc_hosts: true
+
+# --- Utilisateurs -----------------------------------------------------------
+users:
+  - name: formation
+    gecos: Compte de formation
+    groups: [sudo, adm, systemd-journal]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: true          # aucun mot de passe : accès par clé uniquement
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI_REMPLACEZ_MOI_PAR_VOTRE_CLE proxmox
+
+  - name: deploy
+    gecos: Compte de deploiement CI
+    shell: /bin/bash
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI_CLE_DU_RUNNER_CI ci-runner
+
+# --- SSH --------------------------------------------------------------------
+disable_root: true             # pas de connexion SSH directe en root
+ssh_pwauth: false              # clés uniquement, pas de mot de passe
+
+ssh_deletekeys: true           # ⚠️ supprime les clés d'hôte héritées du template
+ssh_genkeytypes: [ed25519, rsa]
+
+# --- Horloge et locale ------------------------------------------------------
+timezone: Pacific/Noumea
+locale: fr_FR.UTF-8
+
+# --- Paquets ----------------------------------------------------------------
+package_update: true
+package_upgrade: false         # ⚠️ true = +1 à 3 min de boot, et dérive entre clones
+
+packages:
+  - qemu-guest-agent
+  - nginx
+  - ufw
+  - htop
+  - vim
+  - curl
+  - unattended-upgrades
+
+# --- Fichiers ---------------------------------------------------------------
+write_files:
+  # Page servie par nginx, avec le nom d'hôte injecté au boot par runcmd
+  - path: /var/www/html/index.html
+    owner: root:root
+    permissions: '0644'
+    content: |
+      <!doctype html>
+      <html lang="fr">
+        <head><meta charset="utf-8"><title>TP7 Proxmox</title></head>
+        <body>
+          <h1>Déployée par cloud-init 🎉</h1>
+          <p>Hôte : <code>__HOSTNAME__</code></p>
+        </body>
+      </html>
+
+  # Durcissement SSH complémentaire
+  - path: /etc/ssh/sshd_config.d/99-tp7.conf
+    owner: root:root
+    permissions: '0644'
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      MaxAuthTries 3
+      ClientAliveInterval 300
+
+  # Journal de déploiement : la trace laissée par cloud-init
+  - path: /etc/tp7-deploiement
+    permissions: '0444'
+    content: |
+      Déployée depuis le template Proxmox debian13-cloud (TP7).
+      Toute modification manuelle sera perdue au prochain redéploiement.
+
+# --- Commandes de premier boot ---------------------------------------------
+# ⚠️ runcmd est en « once-per-instance » : NON rejoué au redémarrage.
+#
+# 💡 Deux écritures possibles, et la différence compte :
+#      - "chaîne"        -> exécutée par un shell : expansions, pipes, redirections OK
+#      - [ liste, args ] -> exec direct, SANS shell : pas de $(...) ni de |
+runcmd:
+  - sed -i "s/__HOSTNAME__/$(hostname)/" /var/www/html/index.html
+  - [ systemctl, enable, --now, qemu-guest-agent ]
+  - [ systemctl, enable, --now, nginx ]
+  - [ ufw, --force, reset ]
+  - [ ufw, default, deny, incoming ]
+  - [ ufw, default, allow, outgoing ]
+  - [ ufw, allow, 22/tcp ]
+  - [ ufw, allow, 80/tcp ]
+  - [ ufw, --force, enable ]
+  - [ systemctl, restart, ssh ]
+
+# --- Message final ----------------------------------------------------------
+# Visible sur la console série : qm terminal <VMID>
+final_message: |
+  ✅ cloud-init terminé sur $hostname
+     version   : $version
+     datasource: $datasource
+     boot en   : $uptime secondes
+
+# --- Redémarrage éventuel ---------------------------------------------------
+# power_state:
+#   mode: reboot
+#   message: Redémarrage post-configuration
+#   timeout: 30
+#   condition: true

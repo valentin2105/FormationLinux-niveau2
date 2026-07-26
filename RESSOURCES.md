@@ -94,6 +94,26 @@ Documentation, tutoriels et aide-mémoire pour accompagner les TP.
 
 ---
 
+## 🧱 TP7 — Proxmox & cloud-init
+
+| Ressource | Lien |
+|---|---|
+| Documentation Proxmox VE (admin guide) | <https://pve.proxmox.com/pve-docs/pve-admin-guide.html> |
+| Proxmox — Cloud-Init Support | <https://pve.proxmox.com/wiki/Cloud-Init_Support> |
+| Proxmox — Cloud-Init FAQ | <https://pve.proxmox.com/wiki/Cloud-Init_FAQ> |
+| Manuel `qm` (gestion des VM en CLI) | <https://pve.proxmox.com/pve-docs/qm.1.html> |
+| Manuel `pvesm` (stockages) | <https://pve.proxmox.com/pve-docs/pvesm.1.html> |
+| Images cloud officielles Debian | <https://cloud.debian.org/images/cloud/> |
+| Debian Cloud — équipe & vérification des images | <https://wiki.debian.org/Teams/Cloud> |
+| Documentation cloud-init | <https://cloudinit.readthedocs.io/> |
+| cloud-init — référence des modules `#cloud-config` | <https://cloudinit.readthedocs.io/en/latest/reference/modules.html> |
+| cloud-init — exemples de configuration | <https://cloudinit.readthedocs.io/en/latest/reference/examples.html> |
+| `virt-customize` (libguestfs) | <https://libguestfs.org/virt-customize.1.html> |
+| LVM-thin dans Proxmox | <https://pve.proxmox.com/wiki/Storage:_LVM_Thin> |
+| Réseau Proxmox (bridges, VLAN) | <https://pve.proxmox.com/wiki/Network_Configuration> |
+
+---
+
 ## 🛠️ Divers
 
 | Ressource | Lien |
