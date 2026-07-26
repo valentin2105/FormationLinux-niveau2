@@ -18,6 +18,7 @@ la supervision et l'environnement de travail.
 - 🔎 Diagnostiquer méthodiquement une panne (logs, ressources, services, réseau, firewall, droits)
 - 📊 Superviser un serveur et mettre en place une stratégie de sauvegarde incrémentale et chiffrée
 - 🖥️ Monter un environnement de travail graphique et un shell productif
+- 🧱 Industrialiser le déploiement de VM sur Proxmox : image cloud, template, clones cloud-init
 
 ---
 
@@ -57,10 +58,15 @@ la supervision et l'environnement de travail.
 | 4 | [**TP4-Analyse**](TP4-Analyse/) 🔎 | Diagnostic de panne : le système est cassé, à vous de le réparer | ~2 h | ⭐⭐⭐ |
 | 5 | [**TP5-Supervision**](TP5-Supervision/) 📊 | Netdata, Monit, sauvegardes `rsnapshot` et `restic` | ~2 h | ⭐⭐ |
 | 6 | [**TP6-TerminalX11**](TP6-TerminalX11/) 🖥️ | X11, i3wm, tmux, zsh, fzf — l'environnement de l'admin sys | ~1 h 30 | ⭐ |
+| 7 | [**TP7-Proxmox**](TP7-Proxmox/) 🧱 | Image cloud Debian 13, template Proxmox, clones cloud-init (user / SSH / IP) | ~2 h | ⭐⭐⭐ |
 
-**Ordre conseillé : 1 → 2 → 3 → 4 → 5 → 6.**
+**Ordre conseillé : 1 → 2 → 3 → 4 → 5 → 6 → 7.**
 Le TP5 réutilise le volume RAID du TP1, et le TP4 doit être joué sur un système encore sain.
 Le TP6 est indépendant : vous pouvez le jouer à n'importe quel moment.
+
+> ⚠️ **Le TP7 est le seul à ne pas se jouer sur la VM de TP** : il s'exécute en `root` **sur
+> l'hyperviseur Proxmox** (PVE 8 ou 9), avec le bridge `vmbr0` et le stockage `local-lvm`.
+> Il est indépendant des TP 1 à 6.
 
 ---
 
@@ -80,9 +86,12 @@ FormationLinux-niveau2/
 ├── TP4-Analyse/               # 🔎 Diagnostic
 │   └── install.sh             #    Script qui « casse » le système
 ├── TP5-Supervision/           # 📊 Monitoring + backup
-└── TP6-TerminalX11/           # 🖥️  Bureau et shell
-    ├── crazy-shell.sh         #    Installation zsh + oh-my-zsh + fzf
-    └── vimtutor.fr            #    Tutoriel vim en français
+├── TP6-TerminalX11/           # 🖥️  Bureau et shell
+│   ├── crazy-shell.sh         #    Installation zsh + oh-my-zsh + fzf
+│   └── vimtutor.fr            #    Tutoriel vim en français
+└── TP7-Proxmox/               # 🧱 Template Proxmox + cloud-init
+    ├── build-template.sh      #    Création automatisée du template
+    └── user-data-exemple.yaml #    user-data cloud-init commenté
 ```
 
 ---
