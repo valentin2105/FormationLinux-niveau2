@@ -33,7 +33,9 @@ d'exprimer des règles sur ces nombres.
 
 ## 📋 Prérequis
 
-- Debian 13, session **root** (`sudo -i`)
+- Debian 13, session **root** — `sudo -i` si votre compte est dans le groupe `sudo`, sinon
+  `su -` (l'installateur Debian propose l'un **ou** l'autre : si vous avez donné un mot de
+  passe à root, `sudo` n'est probablement même pas installé)
 - ⚠️ Un **snapshot de la VM** : on modifie `/etc/passwd`, `/etc/sudoers.d` et `/opt`.
   Une erreur de syntaxe dans `sudoers` peut vous **verrouiller hors de `sudo`**.
 - Deux terminaux, c'est plus confortable : un en `root`, un pour tester en tant qu'`alice` / `bob`
@@ -170,10 +172,20 @@ admin:x:1001:
 developer:x:1002:
 ```
 
-> ⚠️ **`admin` n'est pas un groupe privilégié sous Debian.** Sous Debian, le groupe qui donne
-> `sudo` s'appelle… `sudo`. Notre groupe `admin` est, à cet instant, **un groupe ordinaire
-> sans aucun pouvoir**. Ce sont les règles de la partie 3 qui lui en donneront. C'est
-> exactement l'inverse de l'intuition : le nom ne fait rien, la règle fait tout.
+> ⚠️ **`admin` n'est pas un groupe privilégié sous Debian.** Le groupe qui donne `sudo`
+> s'appelle… `sudo`. Notre groupe `admin` est, à cet instant, **un groupe ordinaire sans
+> aucun pouvoir**. Ce sont les règles de la partie 3 qui lui en donneront. C'est exactement
+> l'inverse de l'intuition : le nom ne fait rien, la règle fait tout.
+>
+> Et ça se prouve — cherchons une règle qui mentionnerait `admin` :
+> ```bash
+> grep -rn '%admin\|%sudo' /etc/sudoers /etc/sudoers.d/ 2>/dev/null
+> # -> /etc/sudoers:NN:%sudo   ALL=(ALL:ALL) ALL      ← une seule ligne, pour 'sudo'
+> ```
+> 💡 Sur d'autres distributions, le résultat diffère : **Ubuntu livre historiquement une ligne
+> `%admin ALL=(ALL) ALL`** dans son `/etc/sudoers`. Y créer un groupe `admin` lui donnerait
+> donc les pleins pouvoirs *avant* d'avoir écrit la moindre règle. Faites toujours ce `grep`
+> avant de choisir un nom de groupe.
 
 ## 2.2 — `adduser` ou `useradd` ?
 
@@ -260,8 +272,37 @@ members developer             # les membres du groupe (paquet 'members')
 getent group developer        # la ligne brute de /etc/group
 lslogins -u                   # tableau de tous les comptes humains
 ls -la /home/bob              # ✅ le home existe, avec les fichiers de /etc/skel
-stat -c '%U:%G %a' /home/bob  # -> bob:bob 700  (HOME_MODE dans login.defs)
+stat -c '%U:%G %a' /home/bob  # -> bob:bob 755   ⚠️ voir ci-dessous
 ```
+
+⚠️ **`755` sur un répertoire personnel : le piège de `useradd` sous Debian.** Les deux outils
+ne calculent pas le mode de la même façon :
+
+| Outil | Source du mode | Résultat sur Debian 13 |
+|---|---|---|
+| `useradd -m` | **`HOME_MODE`** de `/etc/login.defs` — **et s'il est absent, `0777 & ~UMASK`** | `UMASK 022` → **`755`** : le home est lisible par **tout le monde** |
+| `adduser` | **`DIR_MODE`** de `/etc/adduser.conf` | `0700` depuis Debian 12 |
+
+```bash
+grep -E '^(UMASK|HOME_MODE)' /etc/login.defs      # HOME_MODE est-il défini ?
+grep -E '^DIR_MODE' /etc/adduser.conf             # -> DIR_MODE=0700
+```
+
+💡 **Debian n'active pas `HOME_MODE` par défaut** : `adduser` (l'outil recommandé sous Debian)
+lit `adduser.conf` et **ignore complètement `login.defs`**. Un script qui utilise `useradd`
+crée donc des `$HOME` en `755` sans que personne ne le remarque. Deux corrections :
+
+```bash
+# Correction immédiate
+chmod 700 /home/alice /home/bob
+
+# Correction durable, pour tous les comptes créés ensuite
+echo 'HOME_MODE 0700' >> /etc/login.defs
+```
+
+✅ C'est la première démonstration concrète du tableau `adduser` vs `useradd` du §2.2 : le
+binaire bas niveau ne fait *que* ce qu'on lui demande — y compris quand ce n'est pas ce
+qu'on voulait.
 
 ## 2.6 — Politique de mot de passe (`chage`)
 
@@ -269,9 +310,19 @@ stat -c '%U:%G %a' /home/bob  # -> bob:bob 700  (HOME_MODE dans login.defs)
 chage -l bob                            # état actuel
 
 chage -M 90 -m 7 -W 14 -I 30 bob        # politique
-chage -d 0 bob                          # 💡 force le changement à la 1re connexion
 chage -l bob
 ```
+
+> ⚠️ **Ne jouez `chage -d 0 bob` qu'à la FIN du TP.** Cette commande force le changement de mot
+> de passe à la connexion suivante — y compris pour un `su - bob` lancé depuis root. Toutes les
+> démonstrations des parties 3 et 5 commenceraient alors par un dialogue
+> `You are required to change your password immediately`, qui n'a rien à voir avec ce qu'on
+> cherche à observer. Gardez-la pour l'exercice, une fois le reste validé :
+>
+> ```bash
+> chage -d 0 bob    # puis, dans un autre terminal : su - bob
+> chage -M 90 bob   # annule l'expiration immédiate et rétablit la politique
+> ```
 
 | Option | Signification |
 |---|---|
@@ -316,7 +367,8 @@ ls -l "$(command -v sudo)"
 1. bob lance `sudo`. Grâce au bit **setuid**, le processus tourne immédiatement en `root`.
 2. `sudo` lit `/etc/sudoers` (+ `/etc/sudoers.d/`) et cherche une règle correspondant à
    *(utilisateur, machine, identité cible, commande)*.
-3. Aucune règle ne correspond → refus, journalisation, et un message envoyé à l'administrateur.
+3. Aucune règle ne correspond → refus et journalisation (plus un courriel à root, *si* un
+   serveur de messagerie est installé — ce n'est pas le cas sur une Debian minimale).
 4. Une règle correspond → `sudo` demande le **mot de passe de bob** (pas celui de root),
    sauf `NOPASSWD`.
 5. Succès → un **jeton** est posé dans `/run/sudo/ts/bob` : plus de mot de passe pendant
@@ -616,8 +668,9 @@ qu'elle autorise, mais à ce qu'elle **refuse**.
 Retour dans le terminal root :
 
 ```bash
-journalctl -t sudo --no-pager -n 30
-grep sudo /var/log/auth.log | tail -20
+journalctl -t sudo --no-pager -n 30           # ← la commande de référence sous Debian 13
+journalctl _COMM=sudo --since '10 min ago'    # variante par nom de processus
+journalctl -f -t sudo                         # en direct, pendant que bob teste
 ```
 
 ```
@@ -627,6 +680,25 @@ sudo: bob : command not allowed ; TTY=pts/1 ; PWD=/home/bob ; USER=root ; COMMAN
 
 💡 `command not allowed` : voilà ce qu'un audit de sécurité recherche. Un pic de ces lignes
 signale soit une politique trop stricte, soit un compte compromis.
+
+> ⚠️ **`/var/log/auth.log` n'existe plus sur une Debian 13 par défaut.** Depuis Debian 12,
+> **`rsyslog` n'est plus installé** : `journald` assure seul la journalisation, dans un format
+> binaire interrogé par `journalctl`. Tous les tutoriels qui écrivent
+> `grep sudo /var/log/auth.log` datent d'avant ce changement.
+>
+> ```bash
+> ls -l /var/log/auth.log        # -> No such file or directory (comportement normal)
+> apt install -y rsyslog        # à ne faire que si vous avez besoin des fichiers texte
+> ```
+>
+> 💡 Les journaux `journald` sont-ils au moins **persistants** après un redémarrage ?
+> ```bash
+> ls -d /var/log/journal        # s'il existe -> persistant. Sinon, tout est en RAM (/run/log)
+> journalctl --disk-usage
+> ```
+> Si `/var/log/journal` est absent, une trace d'audit disparaît à chaque *reboot* :
+> `mkdir -p /var/log/journal && systemd-tmpfiles --create --prefix /var/log/journal &&
+> systemctl restart systemd-journald`.
 
 ### Bonus — rejouer une session `admin`
 
@@ -1172,6 +1244,10 @@ révèle les orphelins laissés derrière.
 | `sudo: no tty present and no askpass program` | `requiretty` + exécution non interactive | Retirer `requiretty`, ou lancer avec `ssh -t` |
 | Règle `sudo` ignorée | Une règle **ultérieure** l'écrase | `sudo -ll -U bob` ; se souvenir que **la dernière correspondance gagne** |
 | `sudo systemctl restart nginx` refusé alors que la règle existe | Chemin non conforme (`/bin` vs `/usr/bin`) | `command -v systemctl` et aligner la règle |
+| `grep: /var/log/auth.log: No such file or directory` | `rsyslog` n'est plus installé depuis Debian 12 | `journalctl -t sudo` ; installer `rsyslog` seulement si les fichiers texte sont nécessaires |
+| Les journaux disparaissent après un redémarrage | `/var/log/journal` absent → journal en RAM | `mkdir -p /var/log/journal` puis `systemctl restart systemd-journald` |
+| `You are required to change your password immediately` à chaque `su - bob` | `chage -d 0` a été joué trop tôt | `chage -M 90 bob` pour rétablir la politique |
+| `/home/bob` est en `755` | `useradd` utilise `UMASK` faute de `HOME_MODE` | `chmod 700 /home/bob` + `echo 'HOME_MODE 0700' >> /etc/login.defs` |
 | `id` ne montre pas le nouveau groupe | Groupes figés à la connexion | Se reconnecter, ou `newgrp GROUPE` |
 | `grep developer /etc/group` ne montre personne | Ce sont des membres **principaux** | Utiliser `id UTILISATEUR` ou `getent group` |
 | Fichiers créés avec le mauvais groupe | Setgid absent sur le répertoire | `chmod g+s RÉPERTOIRE` puis corriger l'existant (`chown -R :GROUPE`) |

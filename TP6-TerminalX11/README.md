@@ -241,7 +241,7 @@ sudo apt install -y htop ncdu tree jq ripgrep bat fd-find ccze mtr-tiny iftop tl
 | `rg` (ripgrep) | `grep` moderne, bien plus rapide |
 | `batcat` | `cat` avec coloration syntaxique |
 | `fdfind` | `find` simplifié |
-| `ccze` | Colorise les logs : `tail -f /var/log/syslog \| ccze` |
+| `ccze` | Colorise les logs : `journalctl -f \| ccze` (⚠️ pas `/var/log/syslog` : absent sans `rsyslog` depuis Debian 12) |
 | `mtr` | `traceroute` + `ping` en continu |
 | `iftop` | Bande passante par connexion |
 | `tldr` | Exemples concrets au lieu des pages `man` |
