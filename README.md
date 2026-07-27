@@ -61,6 +61,7 @@ la supervision et l'environnement de travail.
 | 6 | [**TP6-TerminalX11**](TP6-TerminalX11/) 🖥️ | X11, i3wm, tmux, zsh, fzf — l'environnement de l'admin sys | ~1 h 30 | ⭐ |
 | 7 | [**TP7-Proxmox**](TP7-Proxmox/) 🧱 | Image cloud Debian 13, template Proxmox, clones cloud-init (user / SSH / IP) | ~2 h | ⭐⭐⭐ |
 | — | [**TP-Users**](TP-Users/) 👥 | Utilisateurs, groupes, `sudo` restreint, `chmod`/`chown`, setgid, ACL | ~2 h | ⭐⭐ |
+| — | [**Saltstack**](TP3-Installation/Saltstack.md) 🧂 | Master / minions, clés, grains, states YAML, ciblage par grain | ~1 h 30 | ⭐⭐ |
 
 **Ordre conseillé : 1 → 2 → 3 → 4 → 5 → 6 → 7.**
 Le TP5 réutilise le volume RAID du TP1, et le TP4 doit être joué sur un système encore sain.
@@ -69,6 +70,10 @@ Le TP6 est indépendant : vous pouvez le jouer à n'importe quel moment.
 > ⚠️ **Le TP7 est le seul à ne pas se jouer sur la VM de TP** : il s'exécute en `root` **sur
 > l'hyperviseur Proxmox** (PVE 8 ou 9), avec le bridge `vmbr0` et le stockage `local-lvm`.
 > Il est indépendant des TP 1 à 6.
+
+> 💡 **`Saltstack` se joue depuis votre poste**, pas sur la VM de TP : le `salt-master`
+> tourne sur votre machine (Ubuntu 26.04, `192.168.56.1`) et pilote deux VM Vagrant
+> Debian 13 (`192.168.56.10` / `.20`). Il est indépendant du TP3 `debootstrap`.
 
 > 💡 **`TP-Users` est un TP transversal, volontairement non numéroté.** Il n'a aucune
 > dépendance et peut être joué à tout moment — y compris en préambule, puisque les notions de
@@ -89,6 +94,7 @@ FormationLinux-niveau2/
 │   ├── Module1/               #    « Hello World » noyau
 │   └── Module2/               #    Périphérique caractère /dev
 ├── TP3-Installation/          # 📦 debootstrap + chroot
+│   └── Saltstack.md           # 🧂 Gestion de configuration master / minions
 ├── TP4-Analyse/               # 🔎 Diagnostic
 │   └── install.sh             #    Script qui « casse » le système
 ├── TP5-Supervision/           # 📊 Monitoring + backup
