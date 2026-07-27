@@ -114,6 +114,25 @@ Documentation, tutoriels et aide-mémoire pour accompagner les TP.
 
 ---
 
+## 👥 TP-Users — Utilisateurs, groupes, `sudo` et permissions
+
+| Ressource | Lien |
+|---|---|
+| `man 5 sudoers` — la référence, à lire une fois en entier | <https://www.sudo.ws/docs/man/sudoers.man/> |
+| Sudo — bonnes pratiques et pièges de sécurité | <https://www.sudo.ws/docs/man/sudo.man/#SECURITY_NOTES> |
+| GTFOBins — comment s'échapper d'un `sudo` mal configuré ⚠️ | <https://gtfobins.github.io/> |
+| `man 5 passwd` / `man 5 shadow` | <https://manpages.debian.org/stable/manpages/shadow.5.en.html> |
+| `man 5 login.defs` — plages d'UID, `UMASK`, `USERGROUPS_ENAB` | <https://manpages.debian.org/stable/passwd/login.defs.5.en.html> |
+| Wiki Debian — gestion des utilisateurs | <https://wiki.debian.org/UserManagement> |
+| Permissions Unix expliquées (setuid, setgid, sticky) | <https://www.redhat.com/sysadmin/suid-sgid-sticky-bit> |
+| ACL POSIX — `man 5 acl` | <https://manpages.debian.org/stable/acl/acl.5.en.html> |
+| Tutoriel ACL (`setfacl` / `getfacl`) | <https://www.redhat.com/sysadmin/linux-access-control-lists> |
+| Calculateur de `chmod` en octal | <https://chmod-calculator.com/> |
+| Norme FHS — que mettre dans `/opt`, `/srv`, `/usr/local` | <https://refspecs.linuxfoundation.org/FHS_3.0/fhs/index.html> |
+| PAM — `pam_umask`, où se règle vraiment le `umask` | <https://manpages.debian.org/stable/libpam-modules/pam_umask.8.en.html> |
+
+---
+
 ## 🛠️ Divers
 
 | Ressource | Lien |
