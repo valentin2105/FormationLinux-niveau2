@@ -58,8 +58,13 @@ do_check() {
             else
                 nok "$u existe mais n'est pas dans le groupe $g"; rc=1
             fi
-            [[ -d "/home/$u" ]] && ok "  home /home/$u présent" \
-                || { nok "  home /home/$u ABSENT (useradd sans -m ?)"; rc=1; }
+            if [[ -d "/home/$u" ]]; then
+                m=$(stat -c '%a' "/home/$u")
+                [[ $m == 700 ]] && ok "  home /home/$u (mode $m)" \
+                    || { nok "  home /home/$u en mode $m au lieu de 700 (HOME_MODE absent)"; rc=1; }
+            else
+                nok "  home /home/$u ABSENT (useradd sans -m ?)"; rc=1
+            fi
         else
             nok "compte $u absent"; rc=1
         fi
@@ -173,6 +178,16 @@ do_setup() {
     # Idempotence : on (re)garantit l'appartenance même si le compte existait
     usermod -aG admin alice
     usermod -aG developer bob
+
+    # ⚠️ useradd calcule le mode du $HOME avec HOME_MODE (login.defs) et, à défaut,
+    #    avec 0777 & ~UMASK -> 0755 sur Debian, soit un home lisible par tout le monde.
+    #    adduser, lui, applique DIR_MODE=0700 de adduser.conf. D'où cette correction.
+    if ! grep -qE '^HOME_MODE' /etc/login.defs; then
+        echo 'HOME_MODE 0700' >> /etc/login.defs
+        warn "HOME_MODE 0700 ajouté à /etc/login.defs (absent par défaut sous Debian)"
+    fi
+    chmod 700 /home/alice /home/bob
+    ok "homes en $(stat -c '%a' /home/bob)"
 
     ok "$(id alice)"
     ok "$(id bob)"
