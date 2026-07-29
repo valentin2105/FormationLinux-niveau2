@@ -14,6 +14,7 @@ sans jamais toucher un installateur.
 | 4️⃣ **Figer** | Convertir la VM en **template** (modèle non démarrable) | `qm template` |
 | 5️⃣ **Cloner** | Dériver des VM du template | `qm clone` |
 | 6️⃣ **Configurer** | Utilisateur, clé SSH, IP statique au premier boot | **cloud-init** |
+| 7️⃣ **Enrôler** | Le clone rejoint le master Salt et s'auto-configure au boot | `salt-minion` |
 
 💡 **Le principe.** Une image cloud est un disque déjà installé, sans configuration :
 pas de nom d'hôte, pas d'utilisateur, pas d'IP, pas de clés SSH d'hôte. Au premier
@@ -573,11 +574,207 @@ less build-template.sh
 
 ---
 
+# 🧂 Partie 7 — Un template déjà sous SaltStack
+
+Un clone qui démarre avec son utilisateur, sa clé SSH et son IP, c'est bien. Un clone qui,
+en plus, **s'enregistre tout seul auprès du master Salt et applique son socle de
+configuration**, c'est la chaîne complète : `qm clone` → machine conforme, sans une seule
+connexion SSH.
+
+> 💡 Cette partie suppose un `salt-master` déjà en place, joignable depuis le réseau des VM.
+> Sa mise en œuvre et les states utilisés ici sont couverts par le TP
+> [**Saltstack**](../TP3-Installation/Saltstack.md).
+
+## 7.1 — Dans l'image ou dans le `user-data` ?
+
+Deux endroits possibles pour installer le minion :
+
+| Approche | Avantages | Inconvénients |
+|---|---|---|
+| `packages:` / `runcmd:` dans le **`user-data`** | Rien à reconstruire, modifiable par clone | Dépend d'Internet **à chaque** boot, rallonge le premier démarrage, échoue en réseau fermé |
+| **`virt-customize`** dans l'image | Une seule fois, boot rapide, fonctionne hors ligne | Il faut refaire le template pour changer de version |
+
+On choisit l'image : c'est exactement l'argument déjà retenu pour `qemu-guest-agent` en
+partie 2.1 — un paquet dont **toutes** les VM ont besoin n'a rien à faire dans un
+`user-data`.
+
+## 7.2 — Préparer les fichiers à injecter
+
+Tout ce qui doit atterrir dans l'image est d'abord assemblé sur le nœud Proxmox.
+
+```bash
+SALT_MASTER="192.168.1.10"      # ⚠️ l'IP ou le FQDN de VOTRE master
+mkdir -p /root/salt-image
+cd /root/salt-image
+```
+
+**1. Le dépôt Salt** (les paquets ne sont pas dans les dépôts Debian) :
+
+```bash
+curl -fsSL https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public \
+  -o salt-archive-keyring.pgp
+
+curl -fsSL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.sources \
+  -o salt.sources
+
+# Épinglage : un minion ne doit JAMAIS être plus récent que son master
+cat > salt-pin-1001 <<'EOF'
+Package: salt-*
+Pin: version 3007.*
+Pin-Priority: 1001
+EOF
+```
+
+**2. La configuration du minion** :
+
+```bash
+cat > minion-tpl.conf <<EOF
+master: $SALT_MASTER
+startup_states: highstate
+EOF
+```
+
+| Directive | Effet |
+|---|---|
+| `master:` | Qui contacter. Sans elle, le minion cherche l'hôte nommé `salt` — pratique si vous avez cet enregistrement DNS |
+| `startup_states: highstate` | Le minion **applique le `top.sls` dès son démarrage**. C'est ce qui rend le clone conforme sans aucune action manuelle |
+
+⚠️ **Aucun `id:` ici.** L'ID serait alors identique sur tous les clones. On laisse le minion
+le déduire du nom d'hôte que cloud-init vient de poser.
+
+**3. L'ordonnancement du service** — le point le plus subtil de cette partie :
+
+```bash
+mkdir -p dropin
+cat > dropin/99-after-cloud-init.conf <<'EOF'
+[Unit]
+After=cloud-final.service
+EOF
+```
+
+⚠️ **Pourquoi ce drop-in ?** Le minion fige son identité dans `/etc/salt/minion_id` **au
+premier démarrage**. S'il démarre avant que cloud-init ait appliqué le nom d'hôte, il
+s'enregistre sous le nom générique de l'image — et **tous vos clones s'appellent `debian`**.
+Attendre `cloud-final.service` garantit que le hostname définitif est en place.
+
+## 7.3 — Injecter le tout
+
+```bash
+export LIBGUESTFS_BACKEND=direct
+cd "$IMG_DIR"
+cp -f "$IMG" "custom-$IMG"
+
+virt-customize -a "custom-$IMG" \
+  --mkdir /etc/apt/keyrings \
+  --copy-in /root/salt-image/salt-archive-keyring.pgp:/etc/apt/keyrings \
+  --copy-in /root/salt-image/salt.sources:/etc/apt/sources.list.d \
+  --copy-in /root/salt-image/salt-pin-1001:/etc/apt/preferences.d \
+  --run-command 'apt-get update' \
+  --install qemu-guest-agent,salt-minion,git,htop,vim,curl \
+  --mkdir /etc/salt/minion.d \
+  --copy-in /root/salt-image/minion-tpl.conf:/etc/salt/minion.d \
+  --mkdir /etc/systemd/system/salt-minion.service.d \
+  --copy-in /root/salt-image/dropin/99-after-cloud-init.conf:/etc/systemd/system/salt-minion.service.d \
+  --run-command 'systemctl enable qemu-guest-agent salt-minion' \
+  --delete '/etc/salt/pki/minion/*' \
+  --delete /etc/salt/minion_id \
+  --run-command 'apt-get clean' \
+  --timezone Pacific/Noumea \
+  --truncate /etc/machine-id
+```
+
+> 💡 **L'ordre de la ligne de commande est l'ordre d'exécution.** C'est ce qui permet de
+> déposer le dépôt *avant* le `--install`, et la configuration *après*.
+
+Les options utiles au-delà de celles vues en partie 2.2 :
+
+| Option | Rôle |
+|---|---|
+| `--mkdir DIR` | `mkdir -p` dans l'image — obligatoire : `--copy-in` exige un répertoire **existant** |
+| `--copy-in LOCAL:DIR_DISTANT` | Copie un fichier de l'hôte vers l'image |
+| `--write FICHIER:CONTENU` | Écrit un fichier court. ⚠️ N'interprète pas `\n` : pour du multi-ligne, `--copy-in` |
+| `--delete CHEMIN` | Supprime (accepte les jokers, à protéger par des quotes) |
+| `--firstboot-command 'CMD'` | Commande jouée au tout premier démarrage seulement |
+
+## 7.4 — Les trois pièges à connaître
+
+| Piège | Conséquence | Parade appliquée ci-dessus |
+|---|---|---|
+| Le minion a **démarré** dans l'image | `/etc/salt/pki/minion/minion.pem` est figé : tous les clones partagent la **même clé** et se volent leur identité sur le master | `--install` ne démarre rien ; `--delete '/etc/salt/pki/minion/*'` par sécurité |
+| `/etc/salt/minion_id` présent | Tous les clones s'enregistrent sous le même nom | `--delete /etc/salt/minion_id` + drop-in `After=cloud-final.service` |
+| Minion **plus récent** que le master | Combinaison non supportée, erreurs incompréhensibles | Fichier de *pin* `salt-*` posé dans l'image |
+
+## 7.5 — Vérifier avant même de créer la VM
+
+Inutile de démarrer quoi que ce soit : on inspecte le disque.
+
+```bash
+virt-cat -a "custom-$IMG" /etc/salt/minion.d/minion-tpl.conf   # -> master: 192.168.1.10
+virt-ls  -a "custom-$IMG" /etc/salt                            # ✅ PAS de minion_id
+virt-ls  -a "custom-$IMG" /etc/salt/pki/minion                 # ✅ vide
+virt-ls  -a "custom-$IMG" /etc/systemd/system/multi-user.target.wants | grep salt
+```
+
+Reprenez ensuite les parties 3 à 4 à l'identique (`qm create`, import, cloud-init,
+`qm template`) : rien ne change côté Proxmox.
+
+## 7.6 — Le clone s'enregistre tout seul
+
+```bash
+qm clone 9000 220 --name salt-web01 --full --storage local-lvm
+qm set 220 --ipconfig0 ip=192.168.1.220/24,gw=192.168.1.1
+qm start 220
+```
+
+**Sur le master**, sans avoir touché à la VM :
+
+```bash
+watch salt-key -L          # ✅ « salt-web01 » apparaît dans les clés en attente
+salt-key -a salt-web01 -y
+salt 'salt-web01' test.ping
+salt 'salt-web01' grains.item id fqdn os
+```
+
+Grâce à `startup_states: highstate`, le socle s'est déjà appliqué au démarrage du minion —
+mais **après** l'acceptation de la clé seulement. Pour un enregistrement 100 % automatique,
+le master sait valider seul un minion qui présente un grain attendu :
+
+```yaml
+# /etc/salt/master.d/autosign.conf  (SUR LE MASTER)
+autosign_grains_dir: /etc/salt/autosign_grains
+```
+
+```bash
+mkdir -p /etc/salt/autosign_grains
+echo "proxmox-tpl-9000" > /etc/salt/autosign_grains/deployment
+systemctl restart salt-master
+```
+
+…et côté image, un grain `deployment: proxmox-tpl-9000` (via `--copy-in` d'un
+`/etc/salt/grains`) plus `autosign_grains: [deployment]` dans la conf du minion.
+
+> ⚠️ **L'auto-signature est un compromis de sécurité.** Toute machine capable de deviner la
+> valeur du grain entre dans votre parc et reçoit vos states — donc vos secrets de pillar.
+> Réservez-la à un réseau d'administration fermé, et préférez un grain à valeur aléatoire
+> plutôt qu'un nom devinable.
+
+🏋️ **Exercices**
+
+1. **Bout en bout** — posez un grain `role: webserver` via un snippet cloud-init
+   (`write_files:` vers `/etc/salt/grains`), clonez, et vérifiez avec `curl` que nginx sert
+   la bonne page **sans jamais vous être connecté à la VM**.
+2. **Sans Internet** — coupez la sortie WAN de la VM clonée. Le minion démarre-t-il quand
+   même ? Comparez avec ce qu'aurait donné une installation par `packages:` cloud-init.
+3. **Retrait propre** — détruisez le clone, puis `salt-key -L`. Que reste-t-il sur le
+   master, et quelle commande nettoie l'orphelin ?
+
+---
+
 ## 🧹 Nettoyage
 
 ```bash
 # ⚠️ Détruit les VM ET leurs disques, sans confirmation
-for VMID in 201 211 212 213; do
+for VMID in 201 211 212 213 220; do
   qm stop "$VMID" 2>/dev/null
   qm destroy "$VMID" --purge --destroy-unreferenced-disks 1
 done
@@ -589,6 +786,9 @@ qm destroy "$TPL_ID" --purge
 rm -f "$IMG_DIR"/debian-13-genericcloud-amd64.qcow2 \
       "$IMG_DIR"/custom-debian-13-genericcloud-amd64.qcow2 \
       "$IMG_DIR"/SHA512SUMS*
+
+# Partie 7 : les clés des minions détruits restent sur le MASTER
+salt-key -d salt-web01 -y
 ```
 
 `--purge` retire aussi la VM des tâches de sauvegarde et des règles de réplication —
@@ -614,6 +814,10 @@ sans lui, vous laissez des références mortes derrière vous.
 | `cloud-init status` → `error` | YAML invalide dans le snippet | Dans la VM : `cloud-init schema --system` puis `journalctl -u cloud-init` |
 | Modification `--ci*` sans effet après reboot | Module en `once-per-instance` | `qm cloudinit update VMID` ; si besoin `cloud-init clean --reboot` dans la VM |
 | `TASK ERROR: storage 'local' does not support content type 'snippets'` | Type de contenu non activé | `pvesm set local --content iso,vztmpl,backup,snippets` |
+| `virt-customize` : `copy-in: target directory ... does not exist` | `--copy-in` ne crée pas le répertoire de destination | Le précéder d'un `--mkdir` (partie 7.3) |
+| Tous les clones apparaissent sous le **même** nom dans `salt-key -L` | `/etc/salt/minion_id` figé dans l'image, ou minion démarré avant cloud-init | `--delete /etc/salt/minion_id` + drop-in `After=cloud-final.service` (partie 7.2) |
+| Un clone « vole » l'identité d'un autre sur le master | Clé privée du minion présente dans l'image | `--delete '/etc/salt/pki/minion/*'`, refaire le template |
+| Le minion ne joint pas le master | `master:` absent (le minion cherche l'hôte `salt`), ou ports 4505/4506 filtrés | `virt-cat -a IMG /etc/salt/minion.d/minion-tpl.conf` ; dans la VM : `salt-call -l debug test.ping` |
 
 ---
 
@@ -627,3 +831,7 @@ sans lui, vous laissez des références mortes derrière vous.
 6. Sur `local-lvm`, `discard=on` est ce qui rend réellement l'espace au LVM-thin.
 7. `--cicustom user=` **écrase** le `user-data` de Proxmox ; `vendor=` s'y **ajoute**.
 8. Un template est du code : le [script](build-template.sh) le prouve mieux qu'un clic.
+9. Un paquet dont **toutes** les VM ont besoin va dans l'image, pas dans le `user-data`.
+10. Une image contenant un `salt-minion` ne doit embarquer **ni clé** (`/etc/salt/pki/minion/`)
+    **ni identité** (`/etc/salt/minion_id`) : ce sont les deux seules choses qui doivent rester
+    propres à chaque clone.
